@@ -282,7 +282,7 @@ input{
       <h3>플레이어 (2~8명)</h3>
       <div id="setupList"></div>
       <button class="btn sm" data-act="addP" id="addP">+ 플레이어 추가</button>
-      <p class="hint">사람 버튼을 누르면 CPU로 바뀌어요. 사람끼리는 기기를 돌려 가며 해요.</p>
+      <p class="hint">사람 버튼을 누르면 AI로 바뀌어요. 사람끼리는 기기를 돌려 가며 해요.</p>
     </div>
     <div class="row">
       <button class="btn ghost" data-act="home">뒤로</button>
@@ -701,7 +701,7 @@ function act(s, a, by){
   return false;
 }
 
-/* ---- CPU ---- */
+/* ---- AI ---- */
 function botMove(s, i){
   const p = s.players[i];
   if (!p.nums.length) return {type:'hit'};
@@ -850,7 +850,7 @@ function renderGame(){
       <div class="seat-top">
         <span class="nm">${esc(p.name)}${me ? ' (나)' : ''}</span>
         ${i === s.dealer ? '<span class="badge dealer">딜러</span>' : ''}
-        ${p.bot ? '<span class="badge">CPU</span>' : ''}
+        ${p.bot ? '<span class="badge">AI</span>' : ''}
         ${pingBadge}
         ${chip}
         <span class="pips" title="서로 다른 숫자 ${uc}/7">${pips}</span>
@@ -949,7 +949,7 @@ function toastCheck(){
   }, lastNew * 120 + 300);
 }
 
-/* ---------- local play & CPU ---------- */
+/* ---------- local play & AI ---------- */
 function dispatch(a){
   if (mode === 'local'){
     const s = JSON.parse(JSON.stringify(S));
@@ -971,13 +971,13 @@ function scheduleBot(){
 let setupPlayers = [];
 function openSetup(){
   const nm = store.get('l7_name') || '나';
-  if (!setupPlayers.length) setupPlayers = [{name:nm, bot:false}, {name:'CPU 1', bot:true}, {name:'CPU 2', bot:true}];
+  if (!setupPlayers.length) setupPlayers = [{name:nm, bot:false}, {name:'AI 1', bot:true}, {name:'AI 2', bot:true}];
   renderSetup(); show('setup');
 }
 function renderSetup(){
   $('#setupList').innerHTML = setupPlayers.map((p, i) => `<div class="row">
     <input value="${esc(p.name)}" data-i="${i}" maxlength="10" aria-label="${i + 1}번 플레이어 이름">
-    <button class="btn sm who-t ${p.bot ? '' : 'human'}" data-act="toggleBot" data-i="${i}">${p.bot ? 'CPU' : '사람'}</button>
+    <button class="btn sm who-t ${p.bot ? '' : 'human'}" data-act="toggleBot" data-i="${i}">${p.bot ? 'AI' : '사람'}</button>
     <button class="btn sm ghost" data-act="removeP" data-i="${i}" ${setupPlayers.length <= 2 ? 'disabled' : ''} aria-label="${i + 1}번 플레이어 빼기">✕</button>
   </div>`).join('');
   $('#addP').disabled = setupPlayers.length >= MAX_P;
@@ -986,7 +986,7 @@ $('#setupList').addEventListener('input', e => { const i = e.target.dataset.i; i
 
 function startLocal(){
   S = blankState();
-  S.players = setupPlayers.map((p, i) => createPlayer('L' + i, p.name.trim() || (p.bot ? `CPU ${i}` : `플레이어 ${i + 1}`), p.bot));
+  S.players = setupPlayers.map((p, i) => createPlayer('L' + i, p.name.trim() || (p.bot ? `AI ${i}` : `플레이어 ${i + 1}`), p.bot));
   const firstHuman = setupPlayers.find(p => !p.bot);
   if (firstHuman && firstHuman.name.trim()) store.set('l7_name', firstHuman.name.trim());
   mode = 'local'; prevSigs = {}; lastToast = 0; overClosed = false; pickHiddenKey = null;
@@ -1448,7 +1448,7 @@ document.addEventListener('click', e => {
     case 'home': show('home'); break;
     case 'rules': $('#rules').classList.add('on'); break;
     case 'closeRules': $('#rules').classList.remove('on'); break;
-    case 'addP': if (setupPlayers.length < MAX_P){ setupPlayers.push({name:`CPU ${setupPlayers.length}`, bot:true}); renderSetup(); } break;
+    case 'addP': if (setupPlayers.length < MAX_P){ setupPlayers.push({name:`AI ${setupPlayers.length}`, bot:true}); renderSetup(); } break;
     case 'removeP': setupPlayers.splice(+b.dataset.i, 1); renderSetup(); break;
     case 'toggleBot': { const p = setupPlayers[+b.dataset.i]; p.bot = !p.bot; renderSetup(); break; }
     case 'startLocal': startLocal(); break;
