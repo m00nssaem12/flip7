@@ -71,6 +71,16 @@ input{
 .err{color:#FFB3BF;min-height:1.5em;margin:4px 0 0}
 .btn.who-t{min-width:72px}
 .btn.who-t.human{background:var(--gold)}
+.btn.lv{min-width:74px}
+.btn.lv-easy{background:#BFF0DE}
+.btn.lv-normal{background:var(--ice)}
+.btn.lv-hard{background:var(--cherry);color:var(--paper)}
+.lv-all{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0 12px;padding-bottom:12px;border-bottom:2px dashed var(--plum3)}
+.lv-all span{color:var(--soft);font-size:15px;margin-right:2px}
+.badge.lv-easy{background:#BFF0DE;color:var(--ink)}
+.badge.lv-normal{background:var(--ice);color:var(--ink)}
+.badge.lv-hard{background:var(--cherry);color:var(--paper)}
+@media (max-width:420px){ .btn.who-t,.btn.lv{min-width:0;padding:5px 8px} }
 .code-big{font-family:'Bungee',sans-serif;font-size:54px;letter-spacing:.12em;color:var(--gold);text-align:center;line-height:1.1}
 .plist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .plist li{background:var(--plum3);border-radius:12px;padding:8px 12px;display:flex;justify-content:space-between}
@@ -280,9 +290,10 @@ input{
     <h2>한 기기에서 하기</h2>
     <div class="box">
       <h3>플레이어 (2~8명)</h3>
+      <div class="lv-all" id="lvAll"></div>
       <div id="setupList"></div>
       <button class="btn sm" data-act="addP" id="addP">+ 플레이어 추가</button>
-      <p class="hint">사람 버튼을 누르면 AI로 바뀌어요. 사람끼리는 기기를 돌려 가며 해요.</p>
+      <p class="hint">사람 버튼을 누르면 AI로 바뀌어요. AI 옆 난이도 버튼을 누르면 쉬움 → 보통 → 어려움 순서로 바뀌어요. 사람끼리는 기기를 돌려 가며 해요.</p>
     </div>
     <div class="row">
       <button class="btn ghost" data-act="home">뒤로</button>
@@ -472,8 +483,8 @@ function cardName(c){
   if (c === 'x2') return '×2';
   return ACT[c].name;
 }
-function createPlayer(id, name, bot){
-  return {id, name, bot:!!bot, total:0, last:0, nums:[], mods:[], acts:[], status:'active', sc:false, f7:false, left:false};
+function createPlayer(id, name, bot, lv){
+  return {id, name, bot:!!bot, lv:bot ? (AI_LEVELS.includes(lv) ? lv : 'normal') : null, total:0, last:0, nums:[], mods:[], acts:[], status:'active', sc:false, f7:false, left:false};
 }
 function blankState(){
   return {phase:'lobby', code:null, hostId:null, players:[], deck:[], discard:[], log:[], seq:0,
@@ -701,8 +712,43 @@ function act(s, a, by){
   return false;
 }
 
-/* ---- AI ---- */
+/* ---- AI ----
+   난이도: easy(쉬움) / normal(보통) / hard(어려움)
+   - 쉬움: 위험은 거의 따지지 않고 카드 수에 따라 대충 뽑음, 액션 카드 대상은 무작위
+   - 보통: 덱에 남은 '겹치는 숫자' 비율로 버스트 확률만 보고 판단
+   - 어려움: 남은 덱 구성(카드 카운팅)으로 몇 수 앞까지 기대 점수를 계산하고,
+             점수판 상황(선두/추격/게임 종료 직전)과 상대 위협도까지 고려 */
+const AI_LEVELS = ['easy', 'normal', 'hard'];
+const AI_LV_NAME = {easy:'쉬움', normal:'보통', hard:'어려움'};
+
 function botMove(s, i){
+  const lv = s.players[i].lv || 'normal';
+  if (lv === 'easy') return aiEasyMove(s, i);
+  if (lv === 'hard') return aiHardMove(s, i);
+  return aiNormalMove(s, i);
+}
+function botTarget(s){
+  const lv = s.players[s.pend.o].lv || 'normal';
+  if (lv === 'easy') return aiEasyTarget(s);
+  if (lv === 'hard') return aiHardTarget(s);
+  return aiNormalTarget(s);
+}
+
+/* ===== 쉬움 ===== */
+function aiEasyMove(s, i){
+  const p = s.players[i];
+  if (!p.nums.length) return {type:'hit'};
+  if (p.total + liveScore(p) >= TARGET) return {type:'stay'};
+  const chance = p.sc ? 0.8 : 0.85 - p.nums.length * 0.13;
+  return {type: Math.random() < chance ? 'hit' : 'stay'};
+}
+function aiEasyTarget(s){
+  const c = s.pend.cands;
+  return c[Math.floor(Math.random() * c.length)];
+}
+
+/* ===== 보통 (기존 AI) ===== */
+function aiNormalMove(s, i){
   const p = s.players[i];
   if (!p.nums.length) return {type:'hit'};
   const sc = liveScore(p);
@@ -715,7 +761,7 @@ function botMove(s, i){
   if (sc < 12) thr += 0.12;
   return {type: risk < thr ? 'hit' : 'stay'};
 }
-function botTarget(s){
+function aiNormalTarget(s){
   const pd = s.pend, P = s.players, me = pd.o;
   const others = pd.cands.filter(x => x !== me);
   const best = (arr, f) => arr.reduce((b, x) => f(x) > f(b) ? x : b, arr[0]);
@@ -723,6 +769,129 @@ function botTarget(s){
   if (!others.length) return me;
   if (pd.c === 'F') return best(others, i => P[i].total * 2 - liveScore(P[i]));
   return best(others, i => P[i].nums.length * 10 + P[i].total / 20);
+}
+
+/* ===== 어려움 ===== */
+const AI_TYPES = Array.from({length:13}, (_, n) => 'n' + n).concat(['p2','p4','p6','p8','p10','x2','F','T','S']);
+function aiCounts(s){
+  const m = {}; s.deck.forEach(c => { m[c] = (m[c] || 0) + 1; });
+  return AI_TYPES.map(c => m[c] || 0);
+}
+function aiState(p){
+  let mask = 0, sum = 0;
+  p.nums.forEach(c => { const n = +c.slice(1); if (!(mask & (1 << n))){ mask |= 1 << n; sum += n; } });
+  let plus = 0; p.mods.forEach(c => { if (c[0] === 'p') plus += +c.slice(1); });
+  return {mask, cnt:new Set(p.nums).size, sum, plus, x2:p.mods.includes('x2'), sc:!!p.sc};
+}
+function aiScore(st){ return (st.x2 ? st.sum * 2 : st.sum) + st.plus + (st.cnt >= 7 ? 15 : 0); }
+function aiBustProb(st, C, N){
+  if (st.sc || N <= 0) return 0;
+  let k = 0; for (let n = 0; n <= 12; n++) if (st.mask & (1 << n)) k += C[n];
+  return k / N;
+}
+/* 카드 한 장을 받은 뒤의 상태 (null = 버스트) */
+function aiNext(st, t){
+  const c = AI_TYPES[t];
+  if (t <= 12){
+    const bit = 1 << t;
+    if (st.mask & bit) return st.sc ? {...st, sc:false} : null;
+    return {...st, mask:st.mask | bit, cnt:st.cnt + 1, sum:st.sum + t};
+  }
+  if (c === 'x2') return {...st, x2:true};
+  if (c[0] === 'p') return {...st, plus:st.plus + +c.slice(1)};
+  if (c === 'S') return st.sc ? st : {...st, sc:true};
+  return st; // F, T는 호출하는 쪽에서 처리
+}
+/* 최선으로 멈출 때를 고른다고 가정한 기대 점수 (d수 앞까지) */
+function aiValue(st, C, N, d, alone){
+  const stay = aiScore(st);
+  if (d <= 0 || N <= 0 || st.cnt >= 7) return stay;
+  return Math.max(stay, aiHitEV(st, C, N, d, alone));
+}
+/* 지금 한 장 더 뽑았을 때의 기대 점수 */
+function aiHitEV(st, C, N, d, alone){
+  if (N <= 0) return aiScore(st);
+  let ev = 0;
+  for (let t = 0; t < AI_TYPES.length; t++){
+    const k = C[t]; if (!k) continue;
+    C[t]--;
+    let v;
+    const c = AI_TYPES[t];
+    if (c === 'F') v = alone ? aiScore(st) : aiValue(st, C, N - 1, d - 1, alone);          // 혼자면 나를 얼려야 함
+    else if (c === 'T') v = alone ? aiForced(st, C, N - 1, 3) : aiValue(st, C, N - 1, d - 1, alone);
+    else {
+      const ns = aiNext(st, t);
+      v = !ns ? 0 : (ns.cnt >= 7 ? aiScore(ns) : aiValue(ns, C, N - 1, d - 1, alone));
+    }
+    C[t]++;
+    ev += k / N * v;
+  }
+  return ev;
+}
+/* 강제로 n장을 받은 뒤의 기대 점수 (3장 뽑기) */
+function aiForced(st, C, N, n){
+  if (n <= 0 || N <= 0 || st.cnt >= 7) return aiScore(st);
+  let ev = 0;
+  for (let t = 0; t < AI_TYPES.length; t++){
+    const k = C[t]; if (!k) continue;
+    C[t]--;
+    const ns = aiNext(st, t);
+    const v = !ns ? 0 : (ns.cnt >= 7 ? aiScore(ns) : aiForced(ns, C, N - 1, n - 1));
+    C[t]++;
+    ev += k / N * v;
+  }
+  return ev;
+}
+function aiHardMove(s, i){
+  const P = s.players, p = P[i];
+  if (!p.nums.length) return {type:'hit'};              // 숫자가 없으면 버스트할 수 없음
+  const st = aiState(p), cur = aiScore(st);
+  const others = P.filter((q, j) => j !== i);
+  const proj = q => q.total + liveScore(q);
+  const mine = p.total + cur;
+  const bestOther = Math.max(...others.map(proj));
+  // 1) 지금 멈추면 200점 넘기고 1등 → 멈춤
+  if (mine >= TARGET && mine > bestOther) return {type:'stay'};
+  // 2) 이미 멈춘 누군가가 200점 넘기고 나보다 앞섬 → 멈추면 어차피 짐, 끝까지 뽑음
+  if (others.some(q => (q.status === 'stay' || q.status === 'frozen') && proj(q) >= TARGET && proj(q) > mine)) return {type:'hit'};
+  const alone = !others.some(q => q.status === 'active');
+  const C = aiCounts(s), N = s.deck.length;
+  const hitEV = aiHitEV(st, C, N, 3, alone);
+  // 3) 점수판 상황에 따른 공격성: 뒤처지면 과감하게, 앞서면 안전하게
+  const diff = p.total - Math.max(...others.map(q => q.total));
+  let bias = Math.max(-0.08, Math.min(0.12, -diff / 300));
+  if (others.some(q => q.status === 'active' && proj(q) >= TARGET)) bias += 0.1; // 곧 게임이 끝날 수도 있음
+  return {type: hitEV > cur * (1 - bias) ? 'hit' : 'stay'};
+}
+function aiHardTarget(s){
+  const pd = s.pend, P = s.players, me = pd.o;
+  const C = aiCounts(s), N = s.deck.length;
+  const topTotal = Math.max(...P.filter((q, j) => j !== me).map(q => q.total));
+  const threat = j => 1 + P[j].total / TARGET + (P[j].total === topTotal ? 0.5 : 0); // 점수 높은 상대일수록 견제
+  const myProj = P[me].total + liveScore(P[me]);
+  let best = pd.cands[0], bestV = -Infinity;
+  pd.cands.forEach(j => {
+    const q = P[j], st = aiState(q), cur = aiScore(st);
+    let v;
+    if (pd.c === 'F'){
+      // 얼리면 그 사람이 앞으로 더 얻을 수 있던 점수를 빼앗음
+      const gain = aiValue(st, C, N, 2, false) - cur;
+      if (j === me) v = -gain;
+      else {
+        v = threat(j) * gain;
+        if (q.total + cur >= TARGET && q.total + cur >= myProj) v -= 1000; // 얼리면 우승을 확정시켜 줌
+      }
+    } else if (pd.c === 'T'){
+      // 3장 받았을 때 기대 점수 변화: 나에겐 이득, 상대에겐 손해(버스트 위험)가 큰 쪽으로
+      const dlt = aiForced(st, C, N, 3) - cur;
+      v = j === me ? dlt : -threat(j) * dlt;
+    } else {
+      // 두 번째 기회는 가장 덜 위협적이고, 덜 필요한 사람에게
+      v = -threat(j) * (aiBustProb(st, C, N) * cur + 2);
+    }
+    if (v > bestV){ bestV = v; best = j; }
+  });
+  return best;
 }
 /* ===== ENGINE END ===== */
 
@@ -850,7 +1019,7 @@ function renderGame(){
       <div class="seat-top">
         <span class="nm">${esc(p.name)}${me ? ' (나)' : ''}</span>
         ${i === s.dealer ? '<span class="badge dealer">딜러</span>' : ''}
-        ${p.bot ? '<span class="badge">AI</span>' : ''}
+        ${p.bot ? `<span class="badge lv-${p.lv || 'normal'}">AI · ${AI_LV_NAME[p.lv || 'normal']}</span>` : ''}
         ${pingBadge}
         ${chip}
         <span class="pips" title="서로 다른 숫자 ${uc}/7">${pips}</span>
@@ -969,15 +1138,21 @@ function scheduleBot(){
 }
 
 let setupPlayers = [];
+function defaultLv(){ const v = store.get('l7_ailv'); return AI_LEVELS.includes(v) ? v : 'normal'; }
 function openSetup(){
   const nm = store.get('l7_name') || '나';
-  if (!setupPlayers.length) setupPlayers = [{name:nm, bot:false}, {name:'AI 1', bot:true}, {name:'AI 2', bot:true}];
+  if (!setupPlayers.length){ const lv = defaultLv(); setupPlayers = [{name:nm, bot:false, lv}, {name:'AI 1', bot:true, lv}, {name:'AI 2', bot:true, lv}]; }
   renderSetup(); show('setup');
 }
 function renderSetup(){
+  const bots = setupPlayers.filter(p => p.bot);
+  const same = bots.length && bots.every(p => p.lv === bots[0].lv) ? bots[0].lv : null;
+  $('#lvAll').innerHTML = `<span>AI 난이도 한 번에:</span>` + AI_LEVELS.map(lv =>
+    `<button class="btn sm lv lv-${lv}" data-act="setAllLv" data-lv="${lv}" ${bots.length ? '' : 'disabled'} aria-pressed="${same === lv}"${same === lv ? ' style="outline:3px solid var(--gold);outline-offset:2px"' : ''}>${AI_LV_NAME[lv]}</button>`).join('');
   $('#setupList').innerHTML = setupPlayers.map((p, i) => `<div class="row">
     <input value="${esc(p.name)}" data-i="${i}" maxlength="10" aria-label="${i + 1}번 플레이어 이름">
     <button class="btn sm who-t ${p.bot ? '' : 'human'}" data-act="toggleBot" data-i="${i}">${p.bot ? 'AI' : '사람'}</button>
+    ${p.bot ? `<button class="btn sm lv lv-${p.lv}" data-act="cycleLv" data-i="${i}" aria-label="${i + 1}번 AI 난이도: ${AI_LV_NAME[p.lv]} (눌러서 바꾸기)">${AI_LV_NAME[p.lv]}</button>` : ''}
     <button class="btn sm ghost" data-act="removeP" data-i="${i}" ${setupPlayers.length <= 2 ? 'disabled' : ''} aria-label="${i + 1}번 플레이어 빼기">✕</button>
   </div>`).join('');
   $('#addP').disabled = setupPlayers.length >= MAX_P;
@@ -986,7 +1161,7 @@ $('#setupList').addEventListener('input', e => { const i = e.target.dataset.i; i
 
 function startLocal(){
   S = blankState();
-  S.players = setupPlayers.map((p, i) => createPlayer('L' + i, p.name.trim() || (p.bot ? `AI ${i}` : `플레이어 ${i + 1}`), p.bot));
+  S.players = setupPlayers.map((p, i) => createPlayer('L' + i, p.name.trim() || (p.bot ? `AI ${i}` : `플레이어 ${i + 1}`), p.bot, p.lv));
   const firstHuman = setupPlayers.find(p => !p.bot);
   if (firstHuman && firstHuman.name.trim()) store.set('l7_name', firstHuman.name.trim());
   mode = 'local'; prevSigs = {}; lastToast = 0; overClosed = false; pickHiddenKey = null;
@@ -1448,9 +1623,17 @@ document.addEventListener('click', e => {
     case 'home': show('home'); break;
     case 'rules': $('#rules').classList.add('on'); break;
     case 'closeRules': $('#rules').classList.remove('on'); break;
-    case 'addP': if (setupPlayers.length < MAX_P){ setupPlayers.push({name:`AI ${setupPlayers.length}`, bot:true}); renderSetup(); } break;
+    case 'addP': if (setupPlayers.length < MAX_P){ setupPlayers.push({name:`AI ${setupPlayers.length}`, bot:true, lv:defaultLv()}); renderSetup(); } break;
     case 'removeP': setupPlayers.splice(+b.dataset.i, 1); renderSetup(); break;
-    case 'toggleBot': { const p = setupPlayers[+b.dataset.i]; p.bot = !p.bot; renderSetup(); break; }
+    case 'toggleBot': { const p = setupPlayers[+b.dataset.i]; p.bot = !p.bot; if (!p.lv) p.lv = defaultLv(); renderSetup(); break; }
+    case 'cycleLv': {
+      const p = setupPlayers[+b.dataset.i];
+      p.lv = AI_LEVELS[(AI_LEVELS.indexOf(p.lv) + 1) % AI_LEVELS.length];
+      store.set('l7_ailv', p.lv); renderSetup(); break;
+    }
+    case 'setAllLv':
+      setupPlayers.forEach(p => { p.lv = b.dataset.lv; });
+      store.set('l7_ailv', b.dataset.lv); renderSetup(); break;
     case 'startLocal': startLocal(); break;
     case 'create': createRoom(); break;
     case 'join': joinRoom(); break;
